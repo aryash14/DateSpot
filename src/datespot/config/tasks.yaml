@@ -1,0 +1,57 @@
+detail_extraction_task:
+  description: >
+    Analyze the user's input and extract all relevant details and requirements necessary to find a suitable date location. 
+    Focus on preferences such as atmosphere, cuisine, budget, location preferences, activities, and any other specific criteria mentioned by the user.
+    Ensure the information is organized and ready for use by the next agent.
+
+    User Input: {user_input}
+  expected_output: >
+    A structured list of key requirements extracted from the user's input, including but not limited to:
+    - Ambience or setting keywords (e.g. rooftop, waterfront, garden, cozy, adventurous, scenic)
+    - Cuisine preferences (e.g. Italian, Japanese, fusion)
+    - Mentions of bar or drink-focused venues (e.g., wine bar, cocktail lounge)
+    - Budget range
+    - Desired activities or experiences
+    - Location preferences (e.g., specific city, neighborhood, or proximity to certain landmarks)
+    - Any other specific requirements or details provided by the user
+  agent: detail_extracter
+
+
+datespot_search_task_api:
+  description: >
+    Conduct a thorough search to find potential date spots that match the user's requirements provided by the Detail Extractor. 
+    Consider the extracted factors to generate a comprehensive yet simplistic search query to search the web.
+    You don't need to worry about the price when looking for place, the next agent will take care of it. It is very important that you
+    don't exclude any results! The location needs to be in the following format "Neighbordhood (if given), City, State." If there is no location mentioned
+    search in San Francisco, CA.
+  expected_output: >
+    The list of all potential locations returned from the web seach in its original format.
+  agent: datespot_finder
+
+
+datespot_review_task:
+  description: >
+    Analyze the list of potential date spots retrieved by the Date Spot Finder and evaluate how well each option aligns with the user's specified requirements. 
+    Assess each location based on the criteria extracted by the Detail Extractor, determining which spots are the most suitable and which do not meet the criteria. 
+    Provide detailed reasoning for each evaluation along with a score ranging from 1 to 5. 
+  expected_output: >
+    Return a JSON with the name of the location as the key and the following fields as the values:
+    - A rating for each location 
+    - A concise Justification of how effectively each spot fulfills the user's criteria.
+  agent: datespot_reviewer
+
+# Conduct a thorough search to find potential date spots that match the user's requirements provided by the Detail Extractor. 
+#     Consider factors such as cuisine type, location, desired activities / experience, preferred atmosphere when searching the web.
+#     You don't need to worry about the price when looking for place, the next agent will take care of it. It is very important that you
+#     don't exclude any results! The location needs to be in the following format "Neighbordhood (if given), City, State." If there is no location mentioned
+#     search in San Francisco, CA.
+
+#  A list of 20 potential date spots that match the user's requirements. Each entry should include:
+#     - Name of the location
+#     - Cuisine Types / Location Types (e.g Bar, Italian Food, Indian restaurant)
+#     - Price 
+#     - Description
+#     - Address 
+#     - Contact information
+#     - Ratings
+#     - Thumbnail URL
