@@ -2,3 +2,4 @@
 __pycache__/
 .DS_Store
 places_found.json
+places_found_v2.json

@@ -116,21 +116,58 @@ def run_crew(user_input):
 
 async def async_multiple_crews(user_input):
     start_time = time.time()
-
-    st.info("🔍 Starting extracter crew...")
+    
+    # Create a progress tracker
+    progress_container = st.empty()
+    status_container = st.empty()
+    
+    # Create a progress bar
+    progress = st.progress(0)
+    progress_text = st.empty()
+    progress_text.write("Overall Progress: 0%")
+    
+    # Show status table - initial state
+    status_df = pd.DataFrame({
+        "Step": ["Extracter Crew", "Finder Crew", "Deduplication"],
+        "Status": ["⏳ Pending", "⏳ Pending", "⏳ Pending"]
+    })
+    status_table = st.empty()
+    status_table.table(status_df)
+    
+    # Start extracter crew
+    status_container.info("🔍 Starting extracter crew...")
+    # Update status table
+    status_df.loc[0, "Status"] = "🔄 Running"
+    status_table.table(status_df)
+    
     extracter_crew = get_extarcter_crew()
     extracter_res = extracter_crew.kickoff(inputs={'user_input': user_input}).pydantic.model_dump()
-    st.success("✅ Extracter crew completed.")
-
+    
+    # Update progress and status
+    progress.progress(33)
+    progress_text.write("Overall Progress: 33%")
+    status_df.loc[0, "Status"] = "✅ Completed"
+    status_table.table(status_df)
+    status_container.success("✅ Extracter crew completed.")
+    
     search_queries = extracter_res["search_queries"]
     location = extracter_res["location"]
     user_requirements = extracter_res["user_requirements"]
-
-    st.info("🔎 Starting finder crew for each search query...")
+    
+    # Start finder crew
+    status_container.info("🔎 Starting finder crew for each search query...")
+    status_df.loc[1, "Status"] = "🔄 Running"
+    status_table.table(status_df)
+    
     finder_crew = get_finder_crew()
     results = []
+    
+    # Create a container for query statuses
+    query_container = st.expander("Finder Queries Progress", expanded=True)
+    
     for idx, search_query in enumerate(search_queries):
-        st.write(f"📌 Finder agent #{idx + 1} starting with query: '{search_query}'")
+        query_container.write(f"📌 Finder agent #{idx + 1} starting with query: '{search_query}'")
+        
         results.append(
             finder_crew.kickoff_async(inputs={
                 "search_query": search_query,
@@ -138,24 +175,41 @@ async def async_multiple_crews(user_input):
                 "user_requirements": user_requirements
             })
         )
-
+    
     completed_results = await asyncio.gather(*results)
-    st.success("✅ Finder crew completed all searches.")
-
+    
+    # Update progress and status
+    progress.progress(66)
+    progress_text.write("Overall Progress: 66%")
+    status_df.loc[1, "Status"] = "✅ Completed"
+    status_table.table(status_df)
+    status_container.success("✅ Finder crew completed all searches.")
+    
     overall = []
     for results in completed_results:
         overall.extend(results.pydantic.model_dump()["date_spots"])
-
-    st.info("🧹 Starting deduplication crew...")
+    
+    # Start deduplication
+    status_container.info("🧹 Starting deduplication crew...")
+    status_df.loc[2, "Status"] = "🔄 Running"
+    status_table.table(status_df)
+    
     deduplication_crew = get_deduplication_crew()
     modified_overall = deduplication_crew.kickoff(inputs={'overall_finds': overall}).pydantic.model_dump()
-    st.success("✅ Deduplication completed.")
-
+    
+    # Update final progress and status
+    progress.progress(100)
+    progress_text.write("Overall Progress: 100%")
+    status_df.loc[2, "Status"] = "✅ Completed"
+    status_table.table(status_df)
+    status_container.success("✅ All processes completed!")
+    
     costs = calculate_cost([extracter_crew, finder_crew, deduplication_crew])
     end_time = time.time()
-
+    
     st.metric(label="💰 Total Cost", value=f"${costs:.4f}")
     st.metric(label="⏱️ Total Runtime", value=f"{end_time - start_time:.2f} seconds")
+    
     return modified_overall
 
 def load_image_with_cache(url, timeout=5):
@@ -334,7 +388,7 @@ def main():
                 else:
                     st.session_state.places = sorted(places_mod, key=lambda x: x["agent_rating"], reverse=True)
                     st.session_state.current_index = 0
-                    st.session_state.coordinate_convertion = False
+                    st.session_state.coordinate_convertion = True
         
 
     # Display results if we have places in session state
