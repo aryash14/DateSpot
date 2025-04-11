@@ -3,3 +3,10 @@ folium>=0.15.0
 pandas>=2.0.0
 pillow>=10.0.0
 streamlit-folium
+crewai[tools]>=0.80.0,<1.0.0
+onnxruntime==1.15.0
+socksio>=1.0.0
+pyarrow==17.0.0
+geopy
+streamlit>=1.32.0
+folium>=0.15.0

@@ -1,0 +1,66 @@
+detail_extraction_task:
+  description: >
+    Analyze the user's input and extract all relevant details and requirements necessary to formulate 1 to 3 searchable queries for the next agent to use in finding a suitable location. 
+    Focus on preferences such as atmosphere, cuisine, budget, location preferences, activities, and any other specific criteria mentioned by the user.
+    Ensure the information is organized and ready for use by the next agent. The search queries should not include the location.
+
+    User Input: {user_input}
+  expected_output: >
+    A structured output containing:
+    - search_queries: A list of 1 to 3 search queries based on the extracted details.
+    - location: A string representing the specified location. The location needs to be in the following format "Neighborhood (if given), City, State." If there is no location mentioned default to San Francisco, CA
+  agent: detail_extracter
+
+datespot_search_task_web:
+  description: >
+    Conduct a comprehensive search to find potential spots that match the user's requirements provided by the Detail Extractor. 
+    Utilize the extracted search query to create a detailed search strategy, ensuring to consider various factors such as cuisine type, desired atmosphere, budget constraints, and specific activities mentioned by the user. 
+    Use {search_query} as your search query on the web, and ensure to gather a wide range of results to provide the user with diverse options. 
+    The results need to be in this location: {location}. 
+  expected_output: >
+    A detailed list of all potential locations returned from the web search, including:
+    - Name of the location
+    - Cuisine Types / Location Types (e.g., Bar, Italian Food, Indian restaurant)
+    - Price range
+    - Description of the venue
+    - Address 
+    - Contact information
+    - Ratings
+    - Thumbnail URL
+  agent: datespot_finder
+
+
+datespot_review_task:
+  description: >
+    Analyze the list of potential spots retrieved by the Date Spot Finder and evaluate how well each option aligns with the user's specified requirements. 
+    Assess each location based on this criteria: {user_requirements}, determining which spots are the most suitable and which do not meet the criteria. 
+    Provide detailed reasoning for each evaluation along with a score ranging from 1 to 5. 
+  expected_output: >
+   A detailed list of all potential locations returned from the web search, including:
+    - Name of the location
+    - Cuisine Types / Location Types (e.g., Bar, Italian Food, Indian restaurant)
+    - Price range
+    - Description of the venue
+    - Address 
+    - Contact information
+    - Ratings
+    - Thumbnail URL
+    - A rating for each location by the agent
+    - A concise Justification of how effectively each spot fulfills the user's criteria.
+  agent: datespot_reviewer
+
+# Conduct a thorough search to find potential date spots that match the user's requirements provided by the Detail Extractor. 
+#     Consider factors such as cuisine type, location, desired activities / experience, preferred atmosphere when searching the web.
+#     You don't need to worry about the price when looking for place, the next agent will take care of it. It is very important that you
+#     don't exclude any results! The location needs to be in the following format "Neighbordhood (if given), City, State." If there is no location mentioned
+#     search in San Francisco, CA.
+
+#  A list of 20 potential date spots that match the user's requirements. Each entry should include:
+#     - Name of the location
+#     - Cuisine Types / Location Types (e.g Bar, Italian Food, Indian restaurant)
+#     - Price 
+#     - Description
+#     - Address 
+#     - Contact information
+#     - Ratings
+#     - Thumbnail URL

@@ -13,7 +13,8 @@ from geopy.exc import GeocoderTimedOut
 import requests
 from io import BytesIO
 import html
-
+from datespot_v2.crew import get_deduplication_crew, get_extarcter_crew, get_finder_crew, calculate_cost
+import asyncio
 
 # Set page config
 st.set_page_config(
@@ -48,11 +49,21 @@ st.markdown("""
 if 'image_cache' not in st.session_state:
     st.session_state.image_cache = {}
 
-def create_map(place):
+def get_coordinates(address):
+        geolocator = Nominatim(user_agent="geocoding_app")
+        location = geolocator.geocode(address)
+        # if location != "San Francisco, CA":
+        return location.latitude, location.longitude
+        # else: # default would be SF coordinates
+        #     return 37.7792588, -122.4193286
+
+def create_map(place, coordinate_convertion):
     """Create a Folium map with a single marker for the selected place"""
     # Get coordinates from address
-    # coordinates = get_coordinates(place.get('address'))
-    coordinates = (place.get("latitude", None), place.get("longitude", None))
+    if coordinate_convertion:
+        coordinates = get_coordinates(place.get('address'))
+    else:
+        coordinates = (place.get("latitude", None), place.get("longitude", None))
     
     if coordinates == (None, None):
         # Default to San Francisco coordinates if geocoding fails
@@ -83,16 +94,17 @@ def run_crew(user_input):
             'user_input': user_input
         }
         
-    
+        start_time = time.time()
         # Create and run the crew
         crew = Datespot().crew()
         
         results = crew.kickoff(inputs=inputs)
         
+        end_time = time.time()
         # Calculate costs and runtime
         costs = 1.93 * (crew.usage_metrics.prompt_tokens + crew.usage_metrics.completion_tokens) / 1_000_000
-        st.success("✅ Search completed successfully!")
-        st.info(f"Total costs: ${costs:.4f}")
+        st.metric(label="💰 Total Cost", value=f"${costs:.4f}")
+        st.metric(label="⏱️ Total Runtime", value=f"{end_time - start_time:.2f} seconds")
     
     
         return results
@@ -100,6 +112,51 @@ def run_crew(user_input):
         st.error(f"An error occurred while running the crew: {e}")
         return None
 
+
+
+async def async_multiple_crews(user_input):
+    start_time = time.time()
+
+    st.info("🔍 Starting extracter crew...")
+    extracter_crew = get_extarcter_crew()
+    extracter_res = extracter_crew.kickoff(inputs={'user_input': user_input}).pydantic.model_dump()
+    st.success("✅ Extracter crew completed.")
+
+    search_queries = extracter_res["search_queries"]
+    location = extracter_res["location"]
+    user_requirements = extracter_res["user_requirements"]
+
+    st.info("🔎 Starting finder crew for each search query...")
+    finder_crew = get_finder_crew()
+    results = []
+    for idx, search_query in enumerate(search_queries):
+        st.write(f"📌 Finder agent #{idx + 1} starting with query: '{search_query}'")
+        results.append(
+            finder_crew.kickoff_async(inputs={
+                "search_query": search_query,
+                "location": location,
+                "user_requirements": user_requirements
+            })
+        )
+
+    completed_results = await asyncio.gather(*results)
+    st.success("✅ Finder crew completed all searches.")
+
+    overall = []
+    for results in completed_results:
+        overall.extend(results.pydantic.model_dump()["date_spots"])
+
+    st.info("🧹 Starting deduplication crew...")
+    deduplication_crew = get_deduplication_crew()
+    modified_overall = deduplication_crew.kickoff(inputs={'overall_finds': overall}).pydantic.model_dump()
+    st.success("✅ Deduplication completed.")
+
+    costs = calculate_cost([extracter_crew, finder_crew, deduplication_crew])
+    end_time = time.time()
+
+    st.metric(label="💰 Total Cost", value=f"${costs:.4f}")
+    st.metric(label="⏱️ Total Runtime", value=f"{end_time - start_time:.2f} seconds")
+    return modified_overall
 
 def load_image_with_cache(url, timeout=5):
     """Load image with caching and proper error handling"""
@@ -125,7 +182,7 @@ def load_image_with_cache(url, timeout=5):
         # Return None on any error
         return None
 
-def create_styled_card(place, agentRanking):
+def create_styled_card(place):
     # Create a clean card layout using Streamlit's native components
     with st.container():
         # Create a bordered container with custom CSS
@@ -215,6 +272,7 @@ def create_styled_card(place, agentRanking):
                 hours_df = pd.DataFrame(list(opening_hours.items()), columns=['Day', 'Hours'])
                 st.table(hours_df.set_index('Day'))
 
+
 def main():
     st.title("DateSpot Finder")
     st.markdown("""
@@ -231,36 +289,63 @@ def main():
         height=150
     )
     
-    if st.button("Find Perfect Date Spots"):
+    col1, col2, _ = st.columns([1, 1, 6])  # two equal columns, third empty to push spacing
+
+    with col1:
+        quick_search = st.button("Quick Search")
+
+    with col2:
+        deep_search = st.button("Deep Search")
+
+    if quick_search:
         if not user_input:
             st.warning("Please describe your ideal date first!")
-            return
+        else:
+            with st.spinner("Finding the perfect spots for your date..."):
+                agentRankings = run_crew(user_input).pydantic.model_dump()["date_spots"]
+                with open('./places_found.json', 'r') as f:
+                    places = json.load(f)["places"]
+
+                places_mod = []
+                for place in places:
+                    name = place["title"]
+                    ranking_data = agentRankings.get(name, {})  # fallback to empty dict if name not found
+                    combined_entry = {**place, **ranking_data}
+                    places_mod.append(combined_entry)
+                
+                if not places_mod:  # Check if the list is empty
+                   st.image("src/placeholders/NoResults.png", caption="No results found", width=300)
+
+                else:
+                    st.session_state.places = sorted(places_mod, key=lambda x: x["agent_rating"], reverse=True)
+                    st.session_state.current_index = 0
+                    st.session_state.coordinate_convertion = False
+
+
+    elif deep_search:
+        if not user_input:
+            st.warning("Please describe your ideal date first!")
+        else:
+            with st.spinner("Finding the perfect spots for your date. Hang tight this takes a bit more work..."):
+                places= asyncio.run(async_multiple_crews(user_input))
+                places_mod = places["date_spots"]
+                if not places_mod:  # Check if the list is empty
+                   st.image("src/placeholders/NoResults.png", caption="No results found", width=300)
+                else:
+                    st.session_state.places = sorted(places_mod, key=lambda x: x["agent_rating"], reverse=True)
+                    st.session_state.current_index = 0
+                    st.session_state.coordinate_convertion = False
         
-        # Show loading animation and run crew
-        with st.spinner("Finding the perfect spots for your date..."):
-            agentRankings = run_crew(user_input).pydantic.dict()["date_spots"]
-            with open('./places_found.json', 'r') as f:
-                places = json.load(f)["places"]
-            
-            places_mod = []
-            for place in places:
-                name = place["name"]
-                ranking_data = agentRankings.get(name, {})  # fallback to empty dict if name not found
-                combined_entry = {**place, **ranking_data}
-                places_mod.append(combined_entry)
-            # Store places in session state
-            st.session_state.places = places_mod.sort(key=lambda x: x["agent_rating"], reverse = True)
-            st.session_state.current_index = 0  # Reset index when new search is performed
 
     # Display results if we have places in session state
     if 'places' in st.session_state and st.session_state.places:
         places = st.session_state.places
-        agentRankings = st.session_state.agentrankings
+        coordinate_convertion = st.session_state.coordinate_convertion
         current_index = st.session_state.current_index
         
         # Display current place
         place = places[current_index]
-        agentRanking = agentRankings.get(place["title"], {"rating": "NA", "reasoning": "N/A"})
+        # agentRanking = agentRankings.get(place["title"], {"rating": "NA", "reasoning": "N/A"})
         col1, col2 = st.columns([1, 2])
         
         with col1:
@@ -283,7 +368,7 @@ def main():
                         st.warning(f"Could not load image for {place['title']}")
             else:
                 st.image( 
-                    "placeholders/NoImageAvailable.png", 
+                    "src/placeholders/NoImageAvailable.png", 
                     use_container_width=True,
                     caption="No image available"
                 )
@@ -291,11 +376,11 @@ def main():
             
             # Display map underneath the image
             st.markdown("### Location")
-            m = create_map(place)
+            m = create_map(place, coordinate_convertion)
             folium_static(m, width=400)
         
         with col2:
-            create_styled_card(place, agentRanking)
+            create_styled_card(place)
         # Navigation buttons
         col1, col2, _ = st.columns([1, 2, 1])
         with col2:
