@@ -50,6 +50,9 @@ if 'image_cache' not in st.session_state:
     st.session_state.image_cache = {}
 
 def get_coordinates(address):
+        if address is None:
+            return 37.7792588, -122.4193286
+        
         geolocator = Nominatim(user_agent="geocoding_app")
         location = geolocator.geocode(address)
         # if location != "San Francisco, CA":
@@ -78,7 +81,7 @@ def create_map(place, coordinate_convertion):
         location=coordinates,
         popup=f"""
             <b>{place['title']}</b><br>
-            {place.get('address', 'N/A')}<br>
+            {(place.get('address') or 'N/A')}<br>
             Rating: {place.get('rating', 'N/A')}<br>
             Price: {place.get('price', 'N/A')}
         """,
@@ -128,7 +131,7 @@ async def async_multiple_crews(user_input):
     
     # Show status table - initial state
     status_df = pd.DataFrame({
-        "Step": ["Extracter Crew", "Finder Crew", "Deduplication"],
+        "Step": ["Extracter Crew", "Finder Crew", "Data Cleanup Crew"],
         "Status": ["⏳ Pending", "⏳ Pending", "⏳ Pending"]
     })
     status_table = st.empty()
@@ -190,7 +193,7 @@ async def async_multiple_crews(user_input):
         overall.extend(results.pydantic.model_dump()["date_spots"])
     
     # Start deduplication
-    status_container.info("🧹 Starting deduplication crew...")
+    status_container.info("🧹 Starting data cleanup crew...")
     status_df.loc[2, "Status"] = "🔄 Running"
     status_table.table(status_df)
     
@@ -303,7 +306,7 @@ def create_styled_card(place):
         st.markdown("""
         <div style='display: flex; border-top: 1px solid #ddd;'>
             <div style='padding: 10px; font-weight: bold; width: 30%; border-right: 1px solid #ddd;'>Address</div>
-            <div style='padding: 10px; flex-grow: 1;'>""" + place.get('address', 'N/A') + """</div>
+            <div style='padding: 10px; flex-grow: 1;'>""" + (place.get('address') or 'N/A')+ """</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -334,8 +337,17 @@ def main():
     """)
     
     # Initialize session state for current index if it doesn't exist
+    if 'quick_search_places' not in st.session_state:
+        st.session_state.quick_search_places = []
+    
+    if 'deep_search_places' not in st.session_state:
+        st.session_state.deep_search_places = []
+        
     if 'current_index' not in st.session_state:
         st.session_state.current_index = 0
+        
+    if 'active_search_mode' not in st.session_state:
+        st.session_state.active_search_mode = None  # Can be 'quick' or 'deep'
     
     # User input
     user_input = st.text_area(
@@ -368,12 +380,13 @@ def main():
                     places_mod.append(combined_entry)
                 
                 if not places_mod:  # Check if the list is empty
-                   st.image("src/placeholders/NoResults.png", caption="No results found", width=300)
-
+                    st.image("src/placeholders/NoResults.png", caption="No results found", width=300)
+                    return
                 else:
-                    st.session_state.places = sorted(places_mod, key=lambda x: x["agent_rating"], reverse=True)
+                    st.session_state.quick_search_places = sorted(places_mod, key=lambda x: x["agent_rating"], reverse=True)
                     st.session_state.current_index = 0
                     st.session_state.coordinate_convertion = False
+                    st.session_state.active_search_mode = 'quick'
 
 
     elif deep_search:
@@ -385,17 +398,24 @@ def main():
                 places_mod = places["date_spots"]
                 if not places_mod:  # Check if the list is empty
                    st.image("src/placeholders/NoResults.png", caption="No results found", width=300)
+                   return
                 else:
-                    st.session_state.places = sorted(places_mod, key=lambda x: x["agent_rating"], reverse=True)
+                    st.session_state.deep_search_places = sorted(places_mod, key=lambda x: x["agent_rating"], reverse=True)
                     st.session_state.current_index = 0
                     st.session_state.coordinate_convertion = True
+                    st.session_state.active_search_mode = 'deep'
         
 
     # Display results if we have places in session state
-    if 'places' in st.session_state and st.session_state.places:
-        places = st.session_state.places
+    if st.session_state.active_search_mode:
         coordinate_convertion = st.session_state.coordinate_convertion
         current_index = st.session_state.current_index
+        
+        # Choose the correct places list based on active search mode
+        if st.session_state.active_search_mode == 'quick':
+            places = st.session_state.quick_search_places
+        else:  # deep search
+            places = st.session_state.deep_search_places
         
         # Display current place
         place = places[current_index]
@@ -416,17 +436,15 @@ def main():
                     else:
                         st.image(
                             "https://via.placeholder.com/300x200?text=Image+Error", 
-                            use_container_width=True,
+                            width=300,
                             caption="Image failed to load"
                         )
-                        st.warning(f"Could not load image for {place['title']}")
             else:
                 st.image( 
                     "src/placeholders/NoImageAvailable.png", 
-                    use_container_width=True,
+                    width=300,
                     caption="No image available"
                 )
-                st.info("No image available for this location")
             
             # Display map underneath the image
             st.markdown("### Location")
